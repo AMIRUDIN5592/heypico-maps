@@ -1,5 +1,7 @@
 # HeyPico Maps – Technical Test Submission
 
+[![CI](https://github.com/AMIRUDIN5592/heypico-maps/actions/workflows/ci.yml/badge.svg)](https://github.com/AMIRUDIN5592/heypico-maps/actions/workflows/ci.yml)
+
 ## 📌 Overview
 
 Proyek ini merupakan implementasi dari test yang diminta:
