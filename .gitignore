@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.env
+
+# VSCode
+.vscode/
+
+# macOS
+.DS_Store
+
+# Docker
+*.log
+
+# Node
+node_modules/
+
+# Ollama models (local cache)
+root/.ollama/
+ollama_models/
+openwebui_data/

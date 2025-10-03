@@ -1,0 +1,23 @@
+/* Compact, clean OpenWebUI tweaks */
+body { letter-spacing: 0.01em; }
+
+/* Chat container width */
+.chat-container, .main, .content, .messages {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+/* Messages */
+.message { padding: 8px 12px; }
+.message.assistant { background: #0e0f12; border: 1px solid #1f2330; border-radius: 10px; }
+.message.user { background: #121419; border: 1px solid #222736; border-radius: 10px; }
+
+/* Sidebar */
+.sidebar { width: 240px; }
+
+/* Input area */
+.input-area textarea { min-height: 80px; }
+
+/* Hide clutter (toggle off if needed) */
+.model-selector, .token-usage, .params-panel { display: none !important; }
+

@@ -1,0 +1,1042 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HeyPico – Maps Assistant</title>
+  <script>
+    // Unregister any existing Service Workers from previous apps on this origin
+    (async () => {
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        try {
+          const alreadyCleared = sessionStorage.getItem('sw_cleared');
+          const regs = await navigator.serviceWorker.getRegistrations();
+          if (regs.length && !alreadyCleared) {
+            await Promise.all(regs.map(r => r.unregister()));
+            if (window.caches && caches.keys) {
+              const keys = await caches.keys();
+              await Promise.all(keys.map(k => caches.delete(k)));
+            }
+            sessionStorage.setItem('sw_cleared', '1');
+            location.reload();
+          }
+        } catch (e) { console.warn('Service Worker cleanup failed:', e); }
+      }
+    })();
+  </script>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --card: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.15);
+      --text: #e6edf3;
+      --muted: #a6b3c2;
+      --primary: #7c3aed;
+      --primary-2: #06b6d4;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --info: #3b82f6;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7fb;
+        --card: #ffffffcc;
+        --border: #e5e7eb;
+        --text: #0f172a;
+        --muted: #475569;
+      }
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 800px at 10% -10%, #1e293b, transparent 60%),
+        radial-gradient(1000px 600px at 100% 0%, #0ea5e9, transparent 40%),
+        radial-gradient(800px 400px at 50% 100%, #7c3aed, transparent 50%),
+        linear-gradient(160deg, var(--bg), #0a0f1a 70%);
+      background-attachment: fixed;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji';
+      min-height: 100vh;
+      animation: gradientShift 15s ease-in-out infinite;
+    }
+    @keyframes gradientShift {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      animation: fadeInUp 0.8s ease-out;
+    }
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .nav {
+      display:flex;
+      justify-content: space-between;
+      align-items:center;
+      gap:16px;
+      margin-bottom: 24px;
+      padding: 16px 20px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+      transition: all 0.3s ease;
+    }
+    .nav:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+    }
+    .brand {
+      display:flex;
+      align-items:center;
+      gap:12px;
+      font-weight:700;
+      letter-spacing:.3px;
+      transition: all 0.3s ease;
+    }
+    .brand:hover {
+      transform: scale(1.05);
+    }
+    .brand svg {
+      filter: drop-shadow(0 0 8px rgba(124,58,237,0.5));
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+
+    .grid {
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:20px;
+    }
+    @media (min-width: 980px){
+      .grid {
+        grid-template-columns: 440px 1fr;
+      }
+    }
+    .card {
+      background: var(--card);
+      border:1px solid var(--border);
+      border-radius:20px;
+      padding:20px;
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+      box-shadow:
+        0 20px 40px rgba(0,0,0,0.15),
+        inset 0 1px 0 rgba(255,255,255,0.1);
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--primary), transparent);
+      animation: shimmer 3s infinite;
+    }
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    .card:hover {
+      transform: translateY(-5px);
+      box-shadow:
+        0 30px 60px rgba(0,0,0,0.2),
+        inset 0 1px 0 rgba(255,255,255,0.15);
+    }
+    .tabbar {
+      display:flex;
+      gap:6px;
+      padding:8px;
+      border-radius:16px;
+      background: rgba(255,255,255,0.05);
+      border:1px solid var(--border);
+      position: relative;
+    }
+    .tab {
+      flex:1;
+      text-align:center;
+      padding:14px 16px;
+      border-radius:12px;
+      cursor:pointer;
+      -webkit-user-select:none;
+      user-select:none;
+      color: var(--muted);
+      font-weight:600;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+    .tab::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      border-radius: 50%;
+      background: rgba(124,58,237,0.3);
+      transform: translate(-50%, -50%);
+      transition: width 0.5s, height 0.5s;
+    }
+    .tab:hover::before {
+      width: 100px;
+      height: 100px;
+    }
+    .tab:hover {
+      color: var(--text);
+      transform: translateY(-2px);
+    }
+    .tab.active {
+      background: linear-gradient(135deg, rgba(124,58,237,.3), rgba(6,182,212,.3));
+    /* Utility */
+    .row-inline { display:flex; align-items:center; gap:8px; }
+    .flex-1 { flex:1; }
+  .clickable { cursor:pointer; -webkit-user-select: none; user-select:none; }
+    .muted { color: var(--muted); }
+    .text-xs { font-size:12px; }
+    .mt-6 { margin-top:6px; }
+  .mr-6 { margin-right:6px; }
+  .va-mid { vertical-align: middle; }
+      color: var(--text);
+      border:1px solid var(--border);
+      box-shadow:
+        0 8px 25px rgba(124,58,237,.25),
+        inset 0 1px 0 rgba(255,255,255,0.2);
+      transform: scale(1.05);
+    }
+    .section {
+      margin-top:16px;
+      animation: fadeIn 0.5s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    label {
+      font-size:12px;
+      color: var(--muted);
+      display:block;
+      margin:12px 0 8px 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .input {
+      width:100%;
+      padding:14px 16px;
+      border-radius:14px;
+      border:1px solid var(--border);
+      background: rgba(0,0,0,0.3);
+      color: var(--text);
+      outline: none;
+      transition: all 0.3s ease;
+      font-size: 14px;
+    }
+    .input:focus {
+      border-color: var(--primary);
+      background: rgba(0,0,0,0.4);
+      box-shadow:
+        0 0 0 3px rgba(124,58,237,0.2),
+        0 8px 25px rgba(124,58,237,0.15);
+      transform: translateY(-2px);
+    }
+    .input:hover {
+      border-color: rgba(124,58,237,0.5);
+    }
+    .row {
+      display:flex;
+      gap:12px;
+    }
+    .flex-1 { flex: 1 1 0%; }
+    .mt-12 { margin-top: 12px; }
+    .mt-10 { margin-top: 10px; }
+    .ai-center { align-items: center; }
+    .w-160 { width:160px; }
+    .hidden { display:none !important; }
+    select.input {
+      appearance: none;
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="%23a6b3c2" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>');
+      background-repeat:no-repeat;
+      background-position: right 12px center;
+      padding-right:44px;
+      cursor: pointer;
+    }
+    .btn {
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      padding:14px 18px;
+      border-radius:14px;
+      border:1px solid transparent;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      color:white;
+      font-weight:700;
+      cursor:pointer;
+      box-shadow:
+        0 10px 30px rgba(124,58,237,.4),
+        inset 0 1px 0 rgba(255,255,255,0.2);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-size: 13px;
+    }
+    .btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+      transition: left 0.5s;
+    }
+    .btn:hover::before {
+      left: 100%;
+    }
+    .btn:hover {
+      transform: translateY(-3px) scale(1.05);
+      box-shadow:
+        0 15px 40px rgba(124,58,237,.5),
+        inset 0 1px 0 rgba(255,255,255,0.3);
+    }
+    .btn:active {
+      transform: translateY(-1px) scale(1.02);
+    }
+    .btn:disabled {
+      opacity:.6;
+      cursor:not-allowed;
+      transform: none !important;
+    }
+    .btn.secondary {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--border);
+      box-shadow:none;
+      backdrop-filter: blur(8px);
+    }
+    .btn.secondary:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: var(--primary);
+      box-shadow: 0 8px 25px rgba(124,58,237,0.2);
+    }
+    .links {
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      margin-top:12px;
+    }
+    .chip {
+      display:inline-block;
+      padding:8px 12px;
+      border-radius:20px;
+      border:1px solid var(--border);
+      background: rgba(255,255,255,0.08);
+      color:var(--muted);
+      font-size:12px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+    .chip:hover {
+      background: rgba(255,255,255,0.15);
+      color: var(--text);
+      transform: scale(1.05);
+    }
+    pre {
+      white-space: pre-wrap;
+      background: rgba(0,0,0,0.4);
+      padding:16px;
+      border-radius:14px;
+      border:1px solid var(--border);
+      max-height: 42vh;
+      overflow:auto;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .map-wrap {
+      position:relative;
+      height: calc(100vh - 160px);
+      border-radius:20px;
+      overflow:hidden;
+      border:1px solid var(--border);
+      background:#000;
+      box-shadow:
+        0 20px 40px rgba(0,0,0,0.2),
+        inset 0 1px 0 rgba(255,255,255,0.1);
+      transition: all 0.3s ease;
+    }
+    .map-wrap:hover {
+      transform: scale(1.02);
+      box-shadow:
+        0 25px 50px rgba(0,0,0,0.3),
+        inset 0 1px 0 rgba(255,255,255,0.15);
+    }
+    iframe {
+      width:100%;
+      height:100%;
+      border:0;
+      display:block;
+      transition: opacity 0.3s ease;
+    }
+    .map-loading {
+      position:absolute;
+      top:50%;
+      left:50%;
+      transform:translate(-50%,-50%);
+      color:var(--muted);
+      text-align:center;
+      z-index:1;
+      pointer-events:none;
+    }
+    .map-loading::before {
+      content:'🗺️';
+      font-size:48px;
+      display:block;
+      margin-bottom:8px;
+      animation: pulse 2s infinite;
+    }
+    .iframe-loading {
+      opacity: 0.7;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .toast {
+      position:fixed;
+      right:20px;
+      bottom:20px;
+      padding:16px 20px;
+      border-radius:16px;
+      border:1px solid var(--border);
+      background: var(--card);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+      box-shadow:
+        0 15px 35px rgba(0,0,0,0.3),
+        inset 0 1px 0 rgba(255,255,255,0.2);
+      opacity:0;
+      transform: translateY(20px) scale(0.9);
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      font-weight: 600;
+      z-index: 1000;
+    }
+    .toast.show {
+      opacity:1;
+      transform: translateY(0) scale(1);
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top: 2px solid white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Header Developer Badge */
+    .dev-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+      font-size: 12px;
+      color: var(--muted);
+      cursor: default;
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+    .dev-badge .dev-name {
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .dev-badge:hover { transform: translateY(-1px); }
+
+    /* Responsive improvements */
+    @media (max-width: 768px) {
+      .container { padding: 16px; }
+      .nav {
+        flex-direction: column;
+        gap: 12px;
+        text-align: center;
+      }
+      .links { justify-content: center; }
+      .brand { font-size: 18px; }
+      
+      .dev-badge { margin-top: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <div class="brand">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l3 7h7l-5.5 4 2.5 7-7-4.5L5 20l2.5-7L2 9h7l3-7z" fill="url(#g)"/><defs><linearGradient id="g" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#06b6d4"/></linearGradient></defs></svg>
+        <div>
+          HeyPico Maps
+              <span class="dev-badge" aria-label="Developed by Amirudin" title="Developed by Amirudin">
+                <span class="dev-icon" aria-hidden="true">💻</span>
+                <span class="dev-name">Amirudin</span>
+              </span>
+        </div>
+      </div>
+      <div class="links">
+        <a class="btn secondary" href="http://localhost:8000/ui" target="_blank" rel="noopener">API Demo</a>
+        <a class="btn secondary" href="http://localhost:3001" target="_blank" rel="noopener">OpenWebUI</a>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- LEFT: Controls -->
+      <div class="card">
+        <div class="tabbar" role="tablist" aria-label="Mode">
+          <div class="tab active" id="tab-dir" role="tab" aria-selected="true" onclick="switchTab('dir')">Directions</div>
+          <div class="tab" id="tab-pl" role="tab" aria-selected="false" onclick="switchTab('pl')">Places</div>
+        </div>
+
+        <!-- Directions Panel -->
+        <div id="panel-dir" class="section" role="tabpanel" aria-labelledby="tab-dir">
+          <div class="row">
+            <div class="flex-1">
+              <label>Origin</label>
+              <input id="dir-origin" class="input" placeholder="Jakarta" />
+            </div>
+            <div class="flex-1">
+              <label>Destination</label>
+              <input id="dir-dest" class="input" placeholder="Bandung" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="flex-1">
+              <label>Mode</label>
+              <select id="dir-mode" class="input" title="Travel mode" aria-label="Travel mode">
+                <option value="driving" selected>driving</option>
+                <option value="walking">walking</option>
+                <option value="bicycling">bicycling</option>
+                <option value="transit">transit</option>
+              </select>
+            </div>
+            <div class="flex-1">
+              <label>Model (optional)</label>
+              <select id="dir-model" class="input" title="Model" aria-label="Model"></select>
+            </div>
+          </div>
+          <div class="row mt-12 ai-center">
+            <button class="btn" id="btn-dir" onclick="onDirections()">
+              <span>Generate Directions</span>
+            </button>
+            <button class="btn secondary" onclick="copyDirLinks()">Copy Links</button>
+            <span class="chip" id="dir-status">Ready</span>
+          </div>
+          <div class="mt-10">
+            <div class="subtitle">Response</div>
+            <pre id="dir-out" aria-live="polite"></pre>
+          </div>
+          <div class="links">
+            <a id="dir-link-gmaps" class="btn secondary" target="_blank">Google Maps</a>
+            <a id="dir-link-embed" class="btn secondary" target="_blank">View on Map</a>
+          </div>
+        </div>
+
+        <!-- Places Panel -->
+        <div id="panel-pl" class="section hidden" role="tabpanel" aria-labelledby="tab-pl">
+          <label>Query</label>
+          <input id="pl-query" class="input" placeholder="coffee near BSD tangerang" />
+          <div class="row">
+            <div class="flex-1">
+              <label for="pl-loc">Location (optional, lat,lng)</label>
+              <div class="row-inline ai-center">
+                <input id="pl-loc" class="input flex-1" placeholder="-6.302,106.653" />
+                <label class="chip clickable">
+                  <input id="pl-use-current" type="checkbox" class="mr-6 va-mid" />
+                  use current
+                </label>
+              </div>
+              <div id="pl-current-status" class="muted text-xs mt-6 hidden"></div>
+            </div>
+            <div class="w-160">
+              <label for="pl-rad">Radius (m)</label>
+              <input id="pl-rad" class="input" type="number" value="5000" title="Radius in meters" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="flex-1">
+              <label for="pl-model">Model (optional)</label>
+              <select id="pl-model" class="input" title="Places model"></select>
+            </div>
+          </div>
+          <div class="row mt-12 ai-center">
+            <button class="btn" id="btn-pl" onclick="onPlaces()">
+              <span>Search Places</span>
+            </button>
+            <button class="btn secondary" onclick="copyPlLinks()">Copy Links</button>
+            <span class="chip" id="pl-status">Ready</span>
+          </div>
+          <div class="mt-10">
+            <div class="subtitle">Response</div>
+            <pre id="pl-out" aria-live="polite"></pre>
+          </div>
+          <div class="links">
+            <a id="pl-link-embed" class="btn secondary" target="_blank">View on Map</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Map -->
+      <div class="map-wrap card">
+        <div id="map-loading" class="map-loading hidden">Loading map...</div>
+        <iframe id="map-frame" src="" title="Map preview"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  
+  <!-- Developer credit moved to header -->
+
+  <script>
+    const API = (window.API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
+    let geoWatchId = null;
+
+        function toast(msg, ms=1800){
+          const t = document.getElementById('toast');
+          t.textContent = msg; t.classList.add('show');
+          clearTimeout(window.__tt); window.__tt = setTimeout(()=> t.classList.remove('show'), ms);
+        }
+
+        function showMapLoading() {
+          const loading = document.getElementById('map-loading');
+          const frame = document.getElementById('map-frame');
+          loading.classList.remove('hidden');
+          frame.classList.add('iframe-loading');
+        }
+
+        function hideMapLoading() {
+          const loading = document.getElementById('map-loading');
+          const frame = document.getElementById('map-frame');
+          loading.classList.add('hidden');
+          frame.classList.remove('iframe-loading');
+        }
+
+        // Geolocation helpers for Places
+        function startWatchCurrentLocation() {
+          const status = document.getElementById('pl-current-status');
+          status.style.display = 'block';
+          status.textContent = '📍 Getting current location...';
+          if (!('geolocation' in navigator)) {
+            status.textContent = '⚠️ Geolocation not supported';
+            return;
+          }
+          try {
+            geoWatchId = navigator.geolocation.watchPosition(
+              pos => {
+                const { latitude, longitude } = pos.coords;
+                const loc = `${latitude.toFixed(6)},${longitude.toFixed(6)}`;
+                const input = document.getElementById('pl-loc');
+                input.value = loc;
+                status.textContent = `📍 Using current location: ${loc}`;
+              },
+              err => {
+                status.textContent = `⚠️ Location error: ${err.message}`;
+              },
+              { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+            );
+          } catch (e) {
+            status.textContent = `⚠️ Geolocation failed: ${e}`;
+          }
+        }
+
+        function stopWatchCurrentLocation() {
+          const status = document.getElementById('pl-current-status');
+          if (geoWatchId !== null && navigator.geolocation && navigator.geolocation.clearWatch) {
+            try { navigator.geolocation.clearWatch(geoWatchId); } catch {}
+          }
+          geoWatchId = null;
+          status.textContent = '';
+          status.style.display = 'none';
+        }
+
+        // Smart zoom calculation for better auto-focus
+        function getSmartZoomForRoute(origin, destination) {
+          // Analyze route distance for optimal zoom
+          const o = origin.toLowerCase();
+          const d = destination.toLowerCase();
+          
+          // Inter-city routes (different cities) - wider zoom
+          const cities = ['jakarta', 'bandung', 'surabaya', 'medan', 'makassar', 'denpasar', 'yogyakarta', 'semarang'];
+          const isInterCity = cities.some(city => o.includes(city)) && cities.some(city => d.includes(city)) && o !== d;
+          
+          if (isInterCity) return 8;  // Wide view for inter-city
+          
+          // Same city or nearby - medium zoom
+          if (o.includes('jakarta') && d.includes('jakarta')) return 11;
+          if (o.includes('bandung') && d.includes('bandung')) return 12;
+          
+          // Default - balanced view
+          return 10;
+        }
+
+        function getSmartZoomForPlaces(query) {
+          const q = query.toLowerCase();
+          
+          // Specific area searches - closer zoom
+          if (q.includes('near') || q.includes('sekitar') || q.includes('dekat')) return 15;
+          
+          // Mall or building searches - medium zoom  
+          if (q.includes('mall') || q.includes('plaza') || q.includes('building')) return 14;
+          
+          // City-wide searches - wider zoom
+          if (q.includes('jakarta') || q.includes('bandung') || q.includes('surabaya')) return 12;
+          
+          // Default places zoom
+          return 14;
+        }
+
+        // Enhanced iframe loading with retry mechanism
+        let mapLoadRetries = 0;
+        const maxRetries = 3;
+
+        function onMapLoad() {
+          setTimeout(() => {
+            hideMapLoading();
+            mapLoadRetries = 0; // Reset on successful load
+          }, 500);
+        }
+
+        function onMapError() {
+          mapLoadRetries++;
+          if (mapLoadRetries < maxRetries) {
+            setTimeout(() => {
+              // Retry with fallback zoom
+              const currentSrc = document.getElementById('map-frame').src;
+              if (currentSrc) {
+                const url = new URL(currentSrc);
+                url.searchParams.set('zoom', '10'); // Fallback zoom
+                document.getElementById('map-frame').src = url.toString();
+              }
+            }, 2000);
+          } else {
+            hideMapLoading();
+            toast('Map failed to load, try refreshing the page', 3000);
+          }
+        }
+
+        // Listen for iframe load and error events
+        const mapFrame = document.getElementById('map-frame');
+        mapFrame.addEventListener('load', onMapLoad);
+        mapFrame.addEventListener('error', onMapError);
+
+        // Listen for messages from iframe for better coordination
+        window.addEventListener('message', function(event) {
+          if (event.origin !== window.location.origin) return; // Security check
+          
+          if (event.data.type === 'directions-loaded') {
+            toast(`✅ Route ${event.data.origin} → ${event.data.destination} loaded!`);
+            hideMapLoading();
+          } else if (event.data.type === 'places-loaded') {
+            toast(`✅ Search "${event.data.query}" loaded!`);
+            hideMapLoading();
+          }
+        });    function switchTab(which){
+      const dirTab = document.getElementById('tab-dir');
+      const plTab = document.getElementById('tab-pl');
+      const dirPanel = document.getElementById('panel-dir');
+      const plPanel = document.getElementById('panel-pl');
+      const isDir = which === 'dir';
+      dirTab.classList.toggle('active', isDir);
+      plTab.classList.toggle('active', !isDir);
+      dirPanel.classList.toggle('hidden', !isDir);
+      plPanel.classList.toggle('hidden', isDir);
+    }
+
+
+
+    async function loadModels() {
+      const dirSel = document.getElementById('dir-model');
+      const plSel = document.getElementById('pl-model');
+      dirSel.innerHTML = ''; plSel.innerHTML='';
+      try {
+        const res = await fetch(API + '/chat/models');
+        const data = await res.json();
+        const models = Array.isArray(data) ? data : [];
+        const candidates = models.map(m => m.name).filter(Boolean);
+        const opts = [''].concat(candidates); // '' = default backend model
+        for (const name of opts) {
+          const o1 = document.createElement('option'); o1.value = name; o1.textContent = name || '(default)'; dirSel.appendChild(o1);
+          const o2 = document.createElement('option'); o2.value = name; o2.textContent = name || '(default)'; plSel.appendChild(o2);
+        }
+      } catch (e) { console.warn('Load models failed', e); }
+    }
+
+    function extractLinks(text) {
+      if (!text) return {};
+      const links = {};
+      const gmaps = text.match(/https:\/\/www\.google\.com\/maps\/dir[^\s]*/);
+      if (gmaps) links.gmaps = gmaps[0];
+      const embed = text.match(/http:\/\/[^\s]*\/maps\/(?:directions|places)\/view\?[^\s]*/);
+      if (embed) links.embed = embed[0];
+      return links;
+    }
+
+        async function onDirections() {
+          const origin = document.getElementById('dir-origin').value || 'Jakarta';
+          const destination = document.getElementById('dir-dest').value || 'Bandung';
+          const mode = document.getElementById('dir-mode').value || 'driving';
+          const model = document.getElementById('dir-model').value || undefined;
+          const btn = document.getElementById('btn-dir');
+          const status = document.getElementById('dir-status');
+          const out = document.getElementById('dir-out');
+          const mapFrame = document.getElementById('map-frame');
+          
+          btn.disabled = true; 
+          status.textContent = 'Getting route...';
+          out.textContent = '🗺️ Finding best route...\n⏳ Please wait a moment';
+          
+          // IMMEDIATELY update map to show the route with smart zoom (don't wait for LLM response)
+          const smartZoom = getSmartZoomForRoute(origin, destination);
+          const directEmbedUrl = API + `/maps/directions/view?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=${encodeURIComponent(mode)}&zoom=${smartZoom}`;
+          showMapLoading();
+          mapFrame.src = directEmbedUrl;
+          toast('🗺️ Loading route on map...');
+          
+          // Extended timeout to ensure we get results
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minutes - enough for any valid request
+          
+          // Progressive loading messages
+          let messageIndex = 0;
+          const messages = [
+            '🗺️ Finding best route...',
+            '📍 Contacting Google Maps...',
+            '🤖 Processing with AI...',
+            '⏳ Almost finished...',
+            '🔄 Finalizing results...'
+          ];
+          
+          const progressInterval = setInterval(() => {
+            if (messageIndex < messages.length - 1) {
+              messageIndex++;
+              out.textContent = messages[messageIndex] + '\n⏳ Please wait, results will be found';
+            }
+          }, 15000); // Update message every 15 seconds
+          
+          try{
+            const res = await fetch(API + '/chat/directions', {
+              method: 'POST', 
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ origin, destination, mode, model }),
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            clearInterval(progressInterval);
+            
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            
+            out.textContent = data.content || JSON.stringify(data);
+            const links = extractLinks(data.content || '');
+            const g = document.getElementById('dir-link-gmaps');
+            const e = document.getElementById('dir-link-embed');
+            
+            // Update links
+            if (links.gmaps) { g.href = links.gmaps; g.style.pointerEvents='auto'; } else { g.removeAttribute('href'); g.style.pointerEvents='none'; }
+            if (links.embed) { e.href = links.embed; e.style.pointerEvents='auto'; }
+            else { e.removeAttribute('href'); e.style.pointerEvents='none'; }
+            
+            // Map is already updated from the immediate call above, so no need to update again
+            // Unless there's a different/better embed URL in the response
+            if (links.embed && links.embed !== directEmbedUrl) {
+              showMapLoading();
+              mapFrame.src = links.embed;
+            }
+            
+            toast('✅ Route found and map loaded!');
+          }catch(err){
+            clearTimeout(timeoutId);
+            clearInterval(progressInterval);
+            if (err.name === 'AbortError') {
+              out.textContent = '⏰ Request is taking too long.\n\n🔗 Please try:\n• Refresh page and try again\n• Use Google Maps link directly\n• Check internet connection';
+            } else {
+              out.textContent = '❌ Error: ' + (err.message || err) + '\n\n🔄 Please try again in a moment.';
+            }
+            toast('Failed to get route - try again', 3000);
+          } finally { 
+            btn.disabled = false; 
+            status.textContent = 'Ready'; 
+          }
+        }
+
+        async function onPlaces() {
+          const query = document.getElementById('pl-query').value || 'coffee near BSD tangerang';
+          const location = document.getElementById('pl-loc').value.trim();
+          const radius = parseInt(document.getElementById('pl-rad').value || '5000', 10);
+          const model = document.getElementById('pl-model').value || undefined;
+          const btn = document.getElementById('btn-pl');
+          const status = document.getElementById('pl-status');
+          const out = document.getElementById('pl-out');
+          const mapFrame = document.getElementById('map-frame');
+          
+          btn.disabled = true; 
+          status.textContent = 'Searching...';
+          out.textContent = '🔍 Searching places...\n⏳ Please wait a moment';
+          
+          // IMMEDIATELY update map to show the places with smart zoom (don't wait for LLM response)  
+          const smartZoom = getSmartZoomForPlaces(query);
+          let placesEmbedUrl = API + `/maps/places/view?q=${encodeURIComponent(query)}&zoom=${smartZoom}`;
+          if (location) placesEmbedUrl += `&location=${encodeURIComponent(location)}`;
+          showMapLoading();
+          mapFrame.src = placesEmbedUrl;
+          toast('🔍 Loading places on map...');
+          
+          // Extended timeout to ensure we get results
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minutes - enough for any valid request
+          
+          // Progressive loading messages  
+          let messageIndex = 0;
+          const messages = [
+            '🔍 Searching places...',
+            '📍 Contacting Google Places...',
+            '🤖 Processing with AI...',
+            '⏳ Almost finished...',
+            '✨ Finalizing recommendations...'
+          ];
+          
+          const progressInterval = setInterval(() => {
+            if (messageIndex < messages.length - 1) {
+              messageIndex++;
+              out.textContent = messages[messageIndex] + '\n⏳ Please wait, results will be found';
+            }
+          }, 15000); // Update message every 15 seconds
+          
+          try{
+            const body = { query, radius }; 
+            if (location) body.location = location; 
+            if (model) body.model = model;
+            
+            const res = await fetch(API + '/chat/places', {
+              method: 'POST', 
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            clearInterval(progressInterval);
+            
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            
+            out.textContent = data.content || JSON.stringify(data);
+            const links = extractLinks(data.content || '');  
+            const e = document.getElementById('pl-link-embed');
+            
+            // Update links
+            if (links.embed) { e.href = links.embed; e.style.pointerEvents='auto'; }
+            else { e.removeAttribute('href'); e.style.pointerEvents='none'; }
+            
+            // Map is already updated from the immediate call above, so no need to update again
+            // Unless there's a different/better embed URL in the response
+            if (links.embed && links.embed !== placesEmbedUrl) {
+              showMapLoading();
+              mapFrame.src = links.embed;
+            }
+            
+            toast('✅ Places found and map loaded!');
+          }catch(err){
+            clearTimeout(timeoutId);
+            clearInterval(progressInterval);
+            if (err.name === 'AbortError') {
+              out.textContent = '⏰ Request is taking too long.\n\n🔗 Please try:\n• Refresh page and try again\n• Use more specific keywords\n• Check internet connection';
+            } else {
+              out.textContent = '❌ Error: ' + (err.message || err) + '\n\n🔄 Please try again in a moment.';
+            }
+            toast('Failed to search places - try again', 3000);
+          } finally { 
+            btn.disabled = false; 
+            status.textContent = 'Ready'; 
+          }
+        }
+
+    function copyDirLinks() {
+      const txt = document.getElementById('dir-out').textContent || '';
+      const links = extractLinks(txt);
+      const payload = [links.gmaps, links.embed].filter(Boolean).join('\n');
+      if (!payload) return;
+      navigator.clipboard.writeText(payload); toast('Links copied');
+    }
+    function copyPlLinks() {
+      const txt = document.getElementById('pl-out').textContent || '';
+      const links = extractLinks(txt);
+      const payload = [links.embed].filter(Boolean).join('\n');
+      if (!payload) return;
+      navigator.clipboard.writeText(payload); toast('Link copied');
+    }
+
+    // Developer credit moved to header (no interaction needed)
+
+    // Wire up current location toggle
+    document.addEventListener('DOMContentLoaded', function() {
+      const checkbox = document.getElementById('pl-use-current');
+      if (checkbox) {
+        checkbox.addEventListener('change', function() {
+          if (this.checked) {
+            startWatchCurrentLocation();
+          } else {
+            stopWatchCurrentLocation();
+          }
+        });
+      }
+    });
+
+    loadModels();
+  </script>
+</body>
+</html>

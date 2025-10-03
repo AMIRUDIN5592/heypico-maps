@@ -1,0 +1,109 @@
+version: "3.9"
+
+name: heypico-local-llm-maps
+
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: heypico_api
+    env_file:
+      - .env
+    environment:
+      # Wajib: simpan API key hanya di .env (bukan di image)
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
+      # Opsional: batasi request per IP (contoh 60 req/menit)
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      OLLAMA_BASE_URL: http://ollama:11434
+      APP_ENV: production
+      TZ: Asia/Jakarta
+    ports:
+      - "8000:8000"
+    depends_on:
+      - ollama
+      - redis
+    networks:
+      - net
+    restart: unless-stopped
+    # Jika Mac Apple Silicon & image lama bermasalah, uncomment:
+    # platform: linux/amd64
+    volumes:
+      - ./api:/app:cached
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: heypico_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - net
+    restart: unless-stopped
+
+  # One-off init job to ensure at least one model is available
+  ollama-init:
+    image: curlimages/curl:8.8.0
+    container_name: heypico_ollama_init
+    depends_on:
+      - ollama
+    networks:
+      - net
+    entrypoint: ["/bin/sh","-c"]
+    command: |
+      set -e
+      echo "Waiting for Ollama..."
+      until curl -sf http://ollama:11434/api/tags > /dev/null; do sleep 2; done
+      echo "Pulling default model llama3.2:3b (if not present)..."
+      curl -s -X POST http://ollama:11434/api/pull \
+        -H "Content-Type: application/json" \
+        -d '{"name":"llama3.2:3b"}'
+      echo "Init complete."
+    restart: "no"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: heypico_web
+    environment:
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
+    networks:
+      - net
+    restart: unless-stopped
+
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: heypico_openwebui
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      TZ: Asia/Jakarta
+    depends_on:
+      - ollama
+    ports:
+      - "3001:8080"
+    volumes:
+      - openwebui_data:/app/backend/data
+      - ./openwebui/custom.css:/app/backend/data/custom.css:ro
+    networks:
+      - net
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: heypico_redis
+    networks:
+      - net
+    restart: unless-stopped
+
+networks:
+  net:
+
+volumes:
+  ollama_models:
+  openwebui_data:
